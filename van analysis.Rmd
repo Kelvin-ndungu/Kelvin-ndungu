@@ -1,0 +1,836 @@
+---
+title: "Van Analysis"
+author: "Kelvin N. Kinyanjui"
+date: '2022-08-17'
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+   
+---
+
+# Business Problem   
+***
+
+The client owns a business that maintains a lot of vans.
+==he client provided an spreadsheet file with *Engine Type*,*Mileage*, *Service Date*, *Cost of repair*, and *Van Number*.[Shared File](https://docs.google.com/spreadsheets/d/11zPiOVSR7AlZEzn0jGHPik0ISszIb5w7rFvrMT7P8pQ/edit?usp=sharing)  
+
+**Requirements**:  
+1. Visualize data to highlight important insights on engine service per engine and where possible per van  
+2. Visualize data to determine at what point the vans are too expensive to maintain.  
+
+## Executive Summary
+
+- Generally, the number of service times increase as the mileage increases.   
+- Therefore, an increase in service time reduces the efficiency of the vehicles  
+- Most service engine costs are below $1000, with the highest costs being recorded for vans with Promaster 3.6L engine  
+- Generally, vans engines are efficient around 100,000 miles.   
+- Past the 100,000 miles mark, most vans become expensive as service costs exponentially increases.   
+- Vans with GC 3.6L engine are the most efficient and cheap to maintain.   
+- On the other hand, vans with promaster 3.6L engine are the least efficient and the most expensive to maintain. 
+
+### Conclusion and Data Limitations  
+
+Most vans’ engines past 100,000 miles are expensive to maintain and should be replaced with new engines  
+**Client Implications**:  
+- This conclusion should be acted upon with caution due to the data limitations.   
+
+**Data Limitations**  
+- *Poor quality data*: The data had gross inconsistencies in mileage when cross checked against service dates  
+- *Inadequate data*:The number of vans per engine varied greatly with varying mileage ranges which would make generalizations difficult.  
+
+
+# Data Preparation, Manipulation, and Analysis   
+*** 
+
+## Setting Up my environement  
+
+
+
+Loading vans data from Google sheets using googlesheets4::read_sheet() function
+
+```{r loading_data}
+raw_data <- readxl::read_xlsx("Van_Mileage.xlsx")
+head(raw_data)
+```
+
+Renaming column heads with readable words
+
+```{r change column names}
+#assign the raw data to a new variable
+van_data <- raw_data 
+
+#use a janitor package function to clean column names ensuring column names contains only numbers, characters & letters
+van_data <- janitor::clean_names(van_data)
+
+#view the column names
+colnames(van_data)
+
+#change the column names to be more descriptive
+van_data <- dplyr::rename(van_data, engine_type = "veh_type", service_date = "date", total_cost = "total")
+head(van_data)
+
+```
+
+Summarizing data to get an overview and while evaluating for inconsistencies
+
+```{r summarize_data}
+#sorting van_data in ascending order using mileage
+van_data <- dplyr::arrange(van_data, mileage)
+head(van_data)
+
+# The nested code below can also be expressed using pipes
+
+# vans_per_engine <- van_data %>% 
+#   dplyr::group_by(engine_type) %>% 
+#   dplyr::summarize(max_mileage = max(mileage), min_mileage = min(mileage), unique_vans = dplyr::n_distinct(van_number))
+
+#getting a high level summary of the data
+vans_per_engine_type <- dplyr::summarize((dplyr::group_by(van_data, engine_type)), max_mileage = max(mileage), min_mileage = min(mileage), unique_vans = dplyr::n_distinct(van_number))
+head(vans_per_engine_type)
+
+#Getting a summary for each van
+# vans_summary <- van_data %>% 
+#   dplyr::group_by(engine_type, van_number) %>% 
+#   dplyr::summarize(max_mileage = max(mileage), min_mileage = min(mileage), number_of_service_times = dplyr::n_distinct(service_date), total_service_cost = sum(total_cost) )
+# View(vans_summary)
+# head(vans_summary)
+
+vans_summary <- dplyr::summarize((dplyr::group_by(van_data, engine_type, van_number)), max_mileage = max(mileage), min_mileage = min(mileage), number_of_service_times = dplyr::n_distinct(service_date), total_service_cost = sum(total_cost) )
+
+head(vans_summary)
+View(vans_summary)
+```
+
+## Data Cleaning and Data Validation   
+
+From the summary above, there are noticeable inconsistencies in the data.  
+1. Inconsistent naming in the van_number column  
+2. There are 32 observations despite the last van being listed as van 30. After evaluation there are two Van9s (Van N09 and Van 09) and two Van14s (Van 14 &Van N14).   
+
+In this case, visualizing the two observations: van9s and van14s.  
+
+Filtering data to only show the two variations of van 09 and Van 14.  
+
+```{r compare van 9 & 14, warning=FALSE}
+ # Filtering the data
+van_9s <- dplyr::filter(van_data, van_number== "VAN 09" | van_number== "VAN N09")
+van_14s <- dplyr::filter(van_data, van_number== "VAN 14" | van_number== "VAN N14")
+
+head(van_9s)
+View(van_9s)#From this view one can tell that the vans are different because they have different engine types 
+
+head(van_14s)
+View(van_14s)
+#dataframes for the ggplot2 plots
+
+#1. date_breaks for setting the breaks in the x axis dates
+date_breaks <- seq(as.POSIXct("2019-06-01"), as.POSIXct("2022-06-01"), by = "6 month")
+
+#plotting a scatter plot to visualize the data(van_9s)
+ggplot2::ggplot(van_9s) + 
+  ggplot2::geom_point(mapping = ggplot2::aes(x= service_date, y= mileage, color = van_number, shape= van_number)) +
+  ggplot2::theme_bw()+
+  ggplot2::labs(title = "Mileage vs Service Date", subtitle = "Visualizing VAN 09 and VAN N09 to check for similarities or differences", caption = "The two vans are different" ) + 
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle =25, hjust = 1))
+
+#plotting a scatter plot to visualize the data(van_14s).
+
+ggplot2::ggplot(van_14s) + 
+  ggplot2::geom_point(mapping = ggplot2::aes(x= service_date, y= mileage, color = van_number, shape= van_number)) +
+  ggplot2::theme_bw() + 
+  ggplot2::labs(title = "Mileage vs Service Date", subtitle = "Visualizing VAN 14 and VAN N14 to check for similarities or differences", caption = "The two vans are different" ) + 
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle =25, hjust = 1)) + 
+  ggplot2::scale_x_datetime(breaks = date_breaks)+ 
+  ggrepel::geom_text_repel(ggplot2::aes(service_date, mileage, label= mileage), size=2)+
+ggplot2::annotate("rect", xmin = as.POSIXct("2020-03-01"), xmax= as.POSIXct("2020-11-01"), ymin = 175000, ymax = 220000, alpha = .1, fill = "blue" ) +
+  ggplot2::annotate("text", x= as.POSIXct("2020-11-15"), y= 160000, label = "The last two scatter points are \n inconsistent with the other scatter points", size =3)+
+  ggplot2::annotate("text", x= as.POSIXct("2020-11-15"), y= 25000, label = "Some values of VAN N14 might \n have been recorded as VAN 14", size =3)
+
+```
+
+From the plot above, a number of things are ensued.  
+1. There are inconsistencies in the service_dates and the recorded mileage (Will be handled in the next step)  
+2. VAN N09 can be changed to van 31  
+3. VAN N14 can be changed to VAN 14 to VAN 32  
+4. Client gave a go ahead on changing the VAN 14 observations with a mileage below 50000 to Van32  
+
+### Changing Observations(van_number) for consistency     
+
+First we need to replace VAN N09 with VAN 31 and VAN 14 with VAN32  
+
+```{r strings cleaning}
+#assigning van_data to another variable.  
+# The code below modifies the original data frame. Therefore, it is wise to assign it to another variable 
+van_data_32 <- van_data
+
+#modifying the observations that were recorded incorrectly 
+van_data_32$van_number[van_data_32$van_number=="VAN 14"& van_data_32$mileage < 50000] <- "VAN N14"
+
+#modifying van numbers for two vans
+van_data_32$van_number[van_data_32$van_number=="VAN N09"] <- "VAN 31"
+van_data_32$van_number[van_data_32$van_number=="VAN N14"] <- "VAN 32"
+
+#visualizing the two  changed van numbers
+# testvan <-dplyr::filter(van_data_32, van_number== "VAN 09" | van_number== "VAN 31")
+# testvan2 <-dplyr::filter(van_data_32, van_number== "VAN 14" | van_number== "VAN 32")
+# ggplot2::ggplot(data =testvan ) + ggplot2::geom_point(mapping = ggplot2::aes(x= service_date, y=mileage,color = van_number))
+# ggplot2::ggplot(data =testvan2 ) + ggplot2::geom_line(mapping = ggplot2::aes(x= service_date, y=mileage,color = van_number)) +ggplot2::facet_wrap(~engine_type)
+
+#changing van_numbers names for consistency. 
+van_data_32$van_no <- stringr::str_sub(van_data_32$van_number, -2)
+van_data_32$van <- stringr::str_c("van_", van_data_32$van_no)
+van_data_32 <- dplyr::select(van_data_32, van, engine_type, mileage, service_date, total_cost)
+head(van_data_32)
+#View(van_data_32)
+
+```
+
+
+### Data Validation    
+
+It is expected that an increase in mileage should be accompanied by a progression in Date.  
+
+Therefore, we will make plots per van for mileage against service date to verify if the data is correct and detect any outliers.   
+
+```{r data validation}
+
+#Creating a broad visualization for all the vans
+
+#ggplot2::ggplot(data =van_data_32 ) + ggplot2::geom_line(mapping = ggplot2::aes(x= service_date, y=mileage,color = van)) +ggplot2::facet_wrap(~engine_type)
+
+# We can filter the data according to engine (combine engine_types with few vans)
+
+# gc_3.6l <- dplyr::filter(van_data_32, engine_type== "GC 3.6L")
+# promaster <- dplyr::filter(van_data_32, engine_type== "PROMASTER 3.6L")
+# other_vans <- dplyr::filter(van_data_32, engine_type != "GC 3.6L" & engine_type != "PROMASTER 3.6L")
+
+# ggplot2::ggplot(data =gc_3.6l, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point()  
+# 
+# ggplot2::ggplot(data =promaster, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() 
+# 
+
+# ggplot2::ggplot(data =other_vans, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() 
+
+#deleting a row that does not meet a specific condition
+#van_data_32 <- van_data_32[!(van_data_32$van == "van_02" & van_data_32$mileage == 16699),]
+
+#van_data_32$service_date[van_data_32$mileage == 19000 & van_data_32$van == "van_06"] <- as.POSIXct("2021-12-06")
+
+
+van_data_32 <- dplyr::arrange(van_data_32, van, mileage)
+#View(van_data_32)
+```
+
+
+#### Removing Outliers(out of range) van_02  
+Some of the observations that were changed:    
+
+| Van  |Date         |mileage    |new_date     |new_mileage| service_cost_change|
+|:----:|:-----------:|:---------:|:-----------:|:---------:|:------------------:|
+|van_02|2020_11_23   |16699      |removed      |removed    |-129.04             |
+|van_02|2020_12_23   |213404     |not_changed  |213440     |572.87              |
+
+```{r cleaning van 2}
+
+#filtering data for each van, checking for outliers through a visualization, confirming with the client and modifying the values accordingly
+
+#van_data_32 <- dplyr::arrange(van_data_32, van, mileage)
+#View(van_data_32)
+
+#make changes and then filter the data out to verify that the changes have been effected
+
+
+
+head(van_data_32)
+
+ select_van <- dplyr::filter(van_data_32, van== "van_02")
+ ggplot2::ggplot(data = select_van, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point()+ggplot2::labs(title = "Mileage vs Service Date: van_02 with outlier(s)")
+
+ #deleting a row that does not meet a specific condition
+ 
+van_data_32 <- van_data_32[!(van_data_32$van == "van_02" & van_data_32$mileage == 16699),]
+
+select_van_clean <- dplyr::filter(van_data_32, van== "van_02")
+ggplot2::ggplot(data = select_van_clean, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() +ggplot2::labs(title = "Mileage vs Service Date: van_02 without outlier(s)")
+
+```
+
+
+#### Removing Outliers(out of range) in van_12     
+
+Some of the observations that were changed include:    
+| Van  |Date         |mileage    |new_date     |new_mileage| service_cost_change|   
+|:----:|:-----------:|:---------:|:-----------:|:---------:|:------------------:|  
+|van_12|2021_02_28   |292289     |removed      |removed    |-58.14             |  
+
+
+```{r cleaning van_12}
+ 
+ select_van <- dplyr::filter(van_data_32, van== "van_12")
+ ggplot2::ggplot(data = select_van, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() +ggplot2::labs(title = "Mileage vs Service Date: van_12 with outlier(s)")
+
+
+ #deleting a row that does not meet a specific condition
+ 
+van_data_32 <- van_data_32[!(van_data_32$van == "van_12" & van_data_32$mileage == 292289),]
+
+select_van_clean <- dplyr::filter(van_data_32, van== "van_12")
+ggplot2::ggplot(data = select_van_clean, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::labs(title = "Mileage vs Service Date: van_12 without outlier(s)")
+```
+
+   
+#### Removing Outliers(out of range) from van_16  
+
+Some of the main changes included:    
+
+| Van  |Date         |mileage    |new_date     |new_mileage| service_cost_change|
+|:----:|:-----------:|:---------:|:-----------:|:---------:|:------------------:|
+|van_16|2021-10-15   |511155     |removed      | removed   |-97.28              |
+
+
+```{r cleaning van_16}
+
+
+select_van <- dplyr::filter(van_data_32, van== "van_16")
+ ggplot2::ggplot(data = select_van, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() +ggplot2::labs(title = "Mileage vs Service Date: van_16 with outlier(s)")
+
+
+#  #deleting a row that does not meet a specific condition
+ van_data_32 <- van_data_32[!(van_data_32$van == "van_16" & van_data_32$mileage == 511155),]
+ 
+ select_van_clean <- dplyr::filter(van_data_32, van== "van_16")
+ ggplot2::ggplot(data = select_van_clean, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::labs(title = "Mileage vs Service Date: van_16 without outlier(s)")
+
+```
+
+
+
+#### Cleaning van_17   
+
+Some of the main changes included:    
+
+| Van  |Date         |mileage    |new_date     |new_mileage| total_cost|
+|:----:|:-----------:|:---------:|:-----------:|:---------:|:---------:|
+|-     |-            |-          |-            |-          |-          |
+
+van_17 is a van of interest. Despite having an inconsistency, the values are within the range. Therefore, the inconsistency will not be removed.
+
+```{r cleaning van_17 }
+
+select_van <- dplyr::filter(van_data_32, van== "van_17")
+ ggplot2::ggplot(data = select_van, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() +  ggplot2::labs(title = "Mileage vs Service Date: van_17 cleaning")
+
+```
+  
+  
+#### Removing Outliers (out 0f range) from Van_19   
+
+Some of the main changes included:   
+
+| Van  |Date         |mileage    |new_date     |new_mileage| service_cost_change|
+|:----:|:-----------:|:---------:|:-----------:|:---------:|:------------------:|
+|van_19|2021-11-03   |26501      |removed      |remove     |-419.54             |
+             |
+
+
+```{r cleaning van_19}
+
+
+select_van <- dplyr::filter(van_data_32, van== "van_19")
+ ggplot2::ggplot(data = select_van, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() +ggplot2::labs(title = "Mileage vs Service Date: van_19 with outlier(s)")
+
+
+#  #deleting a row that does not meet a specific condition
+ van_data_32 <- van_data_32[!(van_data_32$van == "van_19" & van_data_32$mileage == 26501),]
+ 
+ select_van_clean <- dplyr::filter(van_data_32, van== "van_19")
+ ggplot2::ggplot(data = select_van_clean, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::labs(title = "Mileage vs Service Date: van_19 without outlier(s)")
+
+```
+
+
+   
+#### Removing Outliers (out of range) from van 26   
+
+Some of the main changes included:     
+| Van  |Date         |mileage    |new_date     |new_mileage| service_cost_change|
+|:----:|:-----------:|:---------:|:-----------:|:---------:|:------------------:|
+|van_26|2021-08-02   |184900     |removed      |removed    | 67.40             |
+
+
+
+
+```{r Cleaning van_26}
+
+select_van <- dplyr::filter(van_data_32, van== "van_26")
+ ggplot2::ggplot(data = select_van, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() +ggplot2::labs(title = "Mileage vs Service Date: van_26 with outlier(s)")
+
+
+#  #deleting a row that does not meet a specific condition
+ van_data_32 <- van_data_32[!(van_data_32$van == "van_26" & van_data_32$mileage == 184900),]
+ 
+ select_van_clean <- dplyr::filter(van_data_32, van== "van_26")
+ ggplot2::ggplot(data = select_van_clean, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::labs(title = "Mileage vs Service Date: van_19 without outlier(s)")
+ 
+```
+
+     
+#### Cleaning van_27 (van of intrest)   
+
+Some of the main changes included:   
+
+| Van  |Date         |mileage    |new_date     |new_mileage| service_cost_change|
+|:----:|:-----------:|:---------:|:-----------:|:---------:|:------------------:|
+|
+
+
+```{r cleaning van-27}
+
+
+select_van <- dplyr::filter(van_data_32, van== "van_27")
+ ggplot2::ggplot(data = select_van, ggplot2::aes(x= service_date, y=mileage,color = van) ) + ggplot2::geom_line() + ggplot2::geom_point() + ggplot2::labs(title = "Mileage vs Service Date: van_27")
+
+
+```
+   
+    
+## Van Data Summarization
+
+This section will deal with summarizing the van-32 data.  
+
+The data will be summarized per van and per engine type. 
+
+```{r data summarization}
+
+#Getting a summary for each van
+# summary_per_van <- van_data_32 %>%
+#   dplyr::group_by(van, engine_type) %>%
+#   dplyr::summarize(min_mileage = min(mileage), max_mileage = max(mileage),  number_of_service_times = dplyr::n_distinct(service_date), min_service_cost = min(total_cost), max_service_cost= max(total_cost), average_cost_per_service = mean(total_cost), total_service_cost = sum(total_cost) )
+
+
+summary_per_van <- dplyr::summarize((dplyr::group_by(van_data_32, van, engine_type)), min_mileage = min(mileage), max_mileage = max(mileage),  number_of_service_times = dplyr::n(), min_service_cost = min(total_cost), max_service_cost= max(total_cost), average_cost_per_service = mean(total_cost), total_service_cost = sum(total_cost) )
+
+#View(summary_per_van)
+head(summary_per_van)
+
+
+# Getting a summary for each engine 
+# summary_per_engine <- van_data_32 %>%
+#   dplyr::group_by(engine_type) %>%
+#   dplyr::summarize(number_of_vans= dplyr::n_distinct(van), min_mileage = min(mileage), max_mileage = max(mileage),  number_of_service_times = dplyr::n(), service_times_per_van = ceiling(dplyr::n()/dplyr::n_distinct(van)), min_service_cost = min(total_cost), max_service_cost= max(total_cost), average_cost_per_service = mean(total_cost), average_service_cost_per_van = round((sum(total_cost)/dplyr::n_distinct(van)),2), total_service_cost = sum(total_cost) )
+
+
+summary_per_engine <- dplyr::summarize((dplyr::group_by(van_data_32, engine_type)), number_of_vans= dplyr::n_distinct(van), min_mileage = min(mileage), max_mileage = max(mileage),  number_of_service_times = dplyr::n(), service_times_per_van = ceiling(dplyr::n()/dplyr::n_distinct(van)), min_service_cost = min(total_cost), max_service_cost= max(total_cost), average_cost_per_service = mean(total_cost), average_service_cost_per_van = round((sum(total_cost)/dplyr::n_distinct(van)),2), total_service_cost = sum(total_cost) )
+
+#View(summary_per_engine)
+head(summary_per_engine)
+
+```
+
+     
+## Finding Cumulative Sum for Total Cost. 
+
+Finding the cumulative sum per van, engine, and overall.
+
+```{r cumulative sum}
+
+#first we sort the data according to mileage
+
+van_data_final <- dplyr::arrange(van_data_32 ,mileage)
+
+#adding a column for cumulative service cost. One can use the mutate functioning the dplyr package
+
+van_data_final$overall_cum_cost = cumsum(van_data_final$total_cost)
+
+# adding cumulative sum for each engine type
+
+van_data_final <- dplyr::mutate(dplyr::group_by(van_data_final, engine_type), cum_cost_per_engine = cumsum(total_cost))
+
+#adding cumulative sum for each van
+
+van_data_final <- dplyr::mutate(dplyr::group_by(van_data_final, van), cum_cost_per_van = cumsum(total_cost))
+
+#View(van_data_final)
+head(van_data_final)
+
+```
+
+
+
+# Data Visualization   
+***
+
+
+
+## Visualizing Summary Data Per Engine   
+
+In this section, we will need to visualize:  
+- The number of vans per engine  
+- The average service times per van per engine
+- The mileage range per engine  
+- The average service cost per van  
+
+```{r visualizing data summary per engine}
+
+# First we assign the summary_per_engine to a new variable. 
+
+engine_summary <- summary_per_engine 
+#head(engine_summary)
+
+# Create the four plots for engine summaries 
+
+# Number of vans per engine
+#p1 <- 
+ggplot2::ggplot(data = engine_summary, ggplot2::aes(x= number_of_vans, y = engine_type) )+
+  ggplot2::geom_col() +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Vans per engine") + 
+  ggplot2::geom_text(ggplot2::aes(label = number_of_vans), hjust = 1.5, size = 3, color = "white") + 
+  ggplot2::scale_y_discrete(limits = rev(c("GC 3.6L", "PROMASTER 3.6L", "TRANSIT 3.7L", "TRANSIT 3.5L", "E150 4.6L", "VOYAGER 3.6L")))                
+ggplot2::ggsave("number_of_vans_per_engine.png", width = 1624, height = 900, units = "px")
+
+# Number of service times per van per engine
+#p2 <-
+ggplot2::ggplot(data = engine_summary, ggplot2::aes(x=service_times_per_van, y = engine_type) )+
+  ggplot2::geom_col() +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Average service times per van")+ 
+  ggplot2::geom_text(ggplot2::aes(label = service_times_per_van), hjust = 1.5, size = 3, color = "white") +
+  ggplot2::scale_y_discrete(limits = rev(c("GC 3.6L", "PROMASTER 3.6L", "TRANSIT 3.7L", "TRANSIT 3.5L", "E150 4.6L", "VOYAGER 3.6L")))
+ggplot2::ggsave("average service_times_per_engine.png", width = 1624, height = 900, units = "px")
+
+ #Average service cost per van
+#p4 <- 
+ggplot2::ggplot(data = engine_summary, ggplot2::aes(x= average_service_cost_per_van, y = engine_type) )+
+  ggplot2::geom_col() +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Average service cost per van")+ 
+  ggplot2::geom_text(ggplot2::aes(label = average_service_cost_per_van), hjust = 1, size = 2, color = "white")+ggplot2::scale_y_discrete(limits = rev(c("GC 3.6L", "PROMASTER 3.6L", "TRANSIT 3.7L", "TRANSIT 3.5L", "E150 4.6L", "VOYAGER 3.6L")))
+ggplot2::ggsave("average_service_cost_per_engine.png", width = 1624, height = 900, units = "px")
+
+#A dumbbell chart showing mileage ranges 
+
+#p3 <- 
+ggplot2::ggplot  (data = engine_summary, ggplot2::aes(x= max_mileage, y = engine_type))+
+  ggplot2::geom_segment(ggplot2::aes(x= min_mileage, xend = max_mileage, y= engine_type, yend = engine_type)) +
+  ggplot2::geom_point(size = 3) + 
+  ggplot2::geom_point(ggplot2::aes(x= min_mileage, y = engine_type), size = 3) + 
+  ggplot2::labs(title = "Mileage range per engine") + 
+  ggplot2::theme_bw() +
+  ggplot2::scale_x_continuous(breaks = seq(0, 500000, 50000)) + 
+  ggplot2::xlab("Min_mileage - Max_mileage") +
+  ggplot2::scale_y_discrete(limits = rev(c("GC 3.6L", "PROMASTER 3.6L", "TRANSIT 3.7L", "TRANSIT 3.5L", "E150 4.6L", "VOYAGER 3.6L")))
+ggplot2::ggsave("mileage_range_per_engine.png", width = 1624, height = 900, units = "px")
+
+# install and load patchwork
+#p1 + p2+ p3+ p4
+#ggplot2::ggsave("vans_service_summary_per_engine.png", width = 2606, height = 1608, units = "px")
+
+```
+
+
+
+
+## Visualizing Summary Data per van  
+
+The summary data will be visualized using a Cleveland dot plot. 
+
+A Cleveland dot plot functions similar to bar chart but it reduces the visual clatter
+
+```{r visualizing data summary per van}
+
+#Sort the van names according to engine type and then by total cost. 
+
+sorted_van_names <- summary_per_van$van[order(summary_per_van$engine_type, summary_per_van$total_service_cost)]
+
+# We assign the summary_per_van to another plot specifically for this plot
+#Then turn the van column into a factor with levels in the order of the sorted_van_names
+
+vans_summary_plot1 <- summary_per_van
+vans_summary_plot1$van <- factor(vans_summary_plot1$van, levels = sorted_van_names)
+
+#Add a variable for shapes(Can be easily done using the mutate function)
+
+vans_summary_plot1$service_cost_range = dplyr::case_when(
+  vans_summary_plot1$total_service_cost <= 10000 ~ "Less than 10,000",
+  vans_summary_plot1$total_service_cost > 10000 & vans_summary_plot1$total_service_cost <= 20000  ~ "Between 10,000 and 20,000",
+  vans_summary_plot1$total_service_cost > 20000 & vans_summary_plot1$total_service_cost <= 30000  ~ "Between 20,000 and 30,000",
+  vans_summary_plot1$total_service_cost > 30000 & vans_summary_plot1$total_service_cost <= 40000  ~ "Between 30,000 and 40,000") 
+ggplot2::ggplot(data = vans_summary_plot1, ggplot2::aes(x= van, y = max_mileage,size = total_service_cost, color= engine_type)) +  #specifies the aesthetics and data
+  ggplot2::geom_segment(ggplot2::aes(xend = van), yend = 0, color = "grey50", size = 0.5) + 
+  ggplot2::geom_point() +  #creates a normal scatter plot
+  ggplot2::geom_point(mapping = ggplot2::aes(x= van, y= min_mileage))+
+  #ggplot2::scale_size_area(max_size = 8) + 
+  #ggplot2::scale_shape_manual(values = c(18, 16, 17, 15,7)) +
+  ggplot2::theme_bw()+ 
+  ggplot2::theme(
+    #panel.grid.major.y = ggplot2::element_blank(), 
+    #panel.grid.minor.y = ggplot2::element_blank(),
+    #legend.position = "bottom",
+  
+    panel.grid.major.x = ggplot2::element_blank(), 
+    axis.text.x = ggplot2::element_text(angle = 60, hjust = 1)
+  ) + #removes the grid line on the y axis and modify the text on the x-axis
+  #ggplot2::guides(color = ggplot2::guide_legend(title.position = "top", nrow = 3, ncol = 2, keyheight = 0.2)) +
+  #ggplot2::guides(shape = ggplot2::guide_legend(title.position = "top", nrow = 3, ncol = 2, keyheight = 0.2)) +
+  #ggplot2::guides(size = ggplot2::guide_legend(title.position = "top", nrow = 3, ncol = 2, keyheight = 0.1))+
+  ggplot2::guides(size = "none")+
+  ggplot2::ylab("Min_mileage - Max_mileage")+
+  ggplot2::xlab("Vans ordered per engine and \n per increasing total service cost")+
+  ggplot2::scale_y_continuous(breaks = seq(0, 500000, 50000))+  # make the y axis continuous
+  ggplot2::labs(
+    title = "Vans Service Summary", 
+    subtitle = "The visualization shows the mileage range, the total service cost range, and engine type per van")
+  #ggrepel::geom_text_repel(ggplot2::aes(van, max_mileage, label= number_of_service_times, angle =60 , vjust = 0.5, hjust = 0.5), size=3)
+
+ggplot2::ggsave("vans_service_summaryzw.png", width = 2600, height = 1600, units = "px")
+```
+
+
+
+
+## Visualizing Distributions of Service Cost and Sercice times per Engine 
+
+This can be done in a histogram or a violin plot or a boxplot, or a histogram  
+
+```{r visualizing distributions}
+
+# The violin plot is not visually appealing due to the skewness of the data. Therefore, We will use box plots to indicate the skewness of the data
+
+# A histogram for service times distribution
+
+p1 <- ggplot2::ggplot(data = van_data_final, ggplot2::aes(x = mileage)) + 
+  ggplot2::geom_histogram(fill = "white", color = "black") +
+  ggplot2::geom_density()+
+  ggplot2::facet_grid(engine_type~., scales = "free")+
+  ggplot2::scale_x_continuous(breaks = seq(0,300000, 30000)) + 
+  ggplot2::ylab("Service times count") +
+  ggplot2::theme_bw() +
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1)) +
+  ggplot2::labs(title = "Service Times Distribution", subtitle = "A Histogram showing the distribution of service times per engine")
+
+ggplot2::ggsave("service_times_histogram.png", width = 2600, height = 1600, units = "px")
+
+#A box plot for service times distribution
+ggplot2::ggplot(data = van_data_final, ggplot2::aes(y = engine_type, x = mileage)) +
+  ggplot2::geom_boxplot()+
+  ggplot2::theme_bw() +
+  ggplot2::scale_y_discrete(limits =rev(c("E150 4.6L", "GC 3.6L", "PROMASTER 3.6L", "TRANSIT 3.5L", "TRANSIT 3.7L", "VOYAGER 3.6L")) )+
+  ggplot2::scale_x_continuous(breaks = seq(0, 300000, 50000)) + 
+ ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1)) +
+  ggplot2::labs(title = "Service times Distribution", subtitle = "A box plot showing the distribution of service times per engine")
+
+
+ggplot2::ggsave("service_times_boxplot.png", width = 2600, height = 1600, units = "px")
+
+#A box plot for total service cost distribution
+
+ggplot2::ggplot(data = van_data_final, ggplot2::aes(y = engine_type, x = total_cost)) +
+  ggplot2::geom_boxplot()+
+  ggplot2::theme_bw() +
+  ggplot2::scale_y_discrete(limits =rev(c("E150 4.6L", "GC 3.6L", "PROMASTER 3.6L", "TRANSIT 3.5L", "TRANSIT 3.7L", "VOYAGER 3.6L")) ) +
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1)) +
+  ggplot2::labs(title = "Total Cost per Engine Distribution", subtitle = "A box plot showing the distribution of service costs per engine")
+
+ggplot2::ggsave("service_cost_box_plot.png", width = 2600, height = 1600, units = "px")
+
+  
+# A histogram for total service cost distribution
+ggplot2::ggplot(data = van_data_final, ggplot2::aes(x = total_cost)) + 
+  ggplot2::geom_histogram(fill = "white", color = "black") +
+  ggplot2::facet_grid(engine_type~., scales = "free")+
+  ggplot2::scale_x_continuous(breaks = seq(0,7000, 500)) + 
+  ggplot2::ylab("Sercive cost count") +
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1)) +
+  ggplot2::theme_bw() +
+  ggplot2::labs(title = "Total Cost per Engine Distribution", subtitle = "A Histogram showing the distribution of service costs per engine")
+
+ggplot2::ggsave("service_cost_histogram.png", width = 2600, height = 1600, units = "px")
+```
+
+
+
+## Visualizing the Cumulative cost
+
+cumulative costs were calculated per van, per engine
+
+```{r calculating the cumulative  }
+# Plotting a curve with cumulative plots
+#Using faceting does not offer clarity when it comes to cumulative costs. 
+#This is mainly due to the difference in the number of vehicles and consequently due to the number of service times
+
+#Therefore, I will filter the data and represent it per engine
+
+e150_data <- dplyr::filter(van_data_final, engine_type == "E150 4.6L")
+gc36_data <- dplyr::filter(van_data_final, engine_type == "GC 3.6L")
+promaster_data <- dplyr::filter(van_data_final, engine_type == "PROMASTER 3.6L")
+transit35_data <- dplyr::filter(van_data_final, engine_type == "TRANSIT 3.5L")
+transit37_data <- dplyr::filter(van_data_final, engine_type == "TRANSIT 3.7L")
+voyager_data <- dplyr::filter(van_data_final, engine_type == "VOYAGER 3.6L")
+
+
+
+```
+
+### Visualizing cumulative costs for all engines  
+This visualization will help show after how many miles replacing the engine becomes too expensive. The average cost of a new engine is between $2000 - $3000. Therefore, the estimated price of a new engine will be set at $2500. 
+
+```{r all vans cumulative cost}
+
+van_line <-  data.frame(
+  xend =  c(116050, 153000, 174800, 198400,230590, 116050, 153000, 174800, 198400,230590),
+  x = c(116050, 153000, 174800, 198400,230590, 0, 0, 0, 0,0),
+  yend = c(2500, 5000, 7500, 10000, 12500, 2500, 5000, 7500, 10000, 12500),
+  y = c(0, 0, 0, 0, 0, 2500, 5000, 7500, 10000, 12500)
+)
+van_annotate <- data.frame(
+  xend = c(116050, 25000),
+  yend = c(1000, 5000),
+  x = c(0, 25000),
+  y= c(1000, 2500)
+)
+
+
+ggplot2::ggplot(data = van_data_final, ggplot2::aes(x= mileage, y = overall_cum_cost/32))+
+  ggplot2::geom_line()+
+  ggplot2::scale_x_continuous(breaks = seq(0, 300000,50000 )) +
+  ggplot2::theme_bw()+
+  ggplot2::geom_segment(data = van_line, ggplot2::aes(x= x, y= y, xend = xend, yend = yend), linetype = "dashed") +
+  ggplot2::geom_segment(data = van_annotate, ggplot2::aes(x= x, y= y, xend = xend, yend = yend)) + #the arrow argument failed to work
+  ggplot2::geom_point(data = van_annotate, ggplot2::aes(x= xend, y = yend), shape = 20, size =2 ) +
+  ggplot2::geom_point(data = van_annotate, ggplot2::aes(x= x, y = y), shape = 20, size =2 )+
+  ggplot2::annotate("text", x= 55000, y = 3500, label = "Price of a new engine", size = 3, ) +
+  ggplot2::annotate("text", x = 50000, y = 1500, label = "Miles covered", size = 3) +
+  ggplot2::labs(title = "Average Cumulative Cost Vs Miles Covered for All Vans", caption = "The average cumulative cost was calculated by dividing the \n overall cumulative cost per engine by the number of vans per engine")+
+  ggplot2::ylab("Average cumulative cost per van($)") + 
+  ggplot2::xlab("Miles covered (Miles)")
+
+ggplot2::ggsave("cumulative_cost_all_vans.png", width = 1624, height = 900, units = "px")
+
+
+```
+
+
+
+### Visualizing Cumulative Costs for GC 3.6L engine
+
+This will help estimate the when it becomes too expensive to repair the engine.  
+The average cost of a new GC 3.6L engine is $2500.
+
+```{r GC 3.6L cumulative cost}
+
+gc_line <-  data.frame(
+  xend =  c(142600, 170671, 196261, 218641,142600, 170671, 196261, 218641),
+  x = c(142600, 170671, 196261, 218641, 0, 0, 0, 0),
+  yend = c(2500, 5000, 7500, 10000, 2500, 5000, 7500, 10000),
+  y = c(0, 0, 0, 0, 2500, 5000, 7500, 10000)
+)
+gc_annotate <- data.frame(
+  xend = c(5000, 142600),
+  yend = c(2500, 0),
+  x = c(5000, 0),
+  y= c(0, 0)
+)
+
+
+ggplot2::ggplot(data = gc36_data, ggplot2::aes(x= mileage, y = cum_cost_per_engine/15))+
+  ggplot2::geom_line()+
+  ggplot2::scale_x_continuous(breaks = seq(0, 300000,50000 )) +
+  ggplot2::theme_bw()+
+  ggplot2::geom_segment(data = gc_line, ggplot2::aes(x= x, y= y, xend = xend, yend = yend), linetype = "dashed") + 
+  ggplot2::geom_segment(data = gc_annotate, ggplot2::aes(x= x, y= y, xend = xend, yend = yend)) + #the arrow argument failed to work
+  ggplot2::geom_point(data = gc_annotate, ggplot2::aes(x= xend, y = yend), shape = 20, size =2 ) +
+  ggplot2::geom_point(data = gc_annotate, ggplot2::aes(x= x, y = y), shape = 20, size =2 )+
+  ggplot2::annotate("text", x= 30000, y = 1800, label = "Price of a new engine", size = 3, ) +
+  ggplot2::annotate("text", x = 100000, y = 500, label = "Miles covered", size = 3) +
+  ggplot2::labs(title = "Average Cumulative Cost Vs Miles Covered for GC 3.6L", caption = "The average cumulative cost was calculated by dividing the overall \n cumulative cost per engine by the number of vans per engine")+
+  ggplot2::ylab("Average cumulative cost per van($)") + 
+  ggplot2::xlab("Miles covered (Miles)")
+
+
+ggplot2::ggsave("cumulative_cost_gc_36L.png", width = 1624, height = 900, units = "px")
+
+```
+
+### Visualizing Cumulative Costs for GC 3.6L engine
+
+This will help estimate the when it becomes too expensive to repair the engine.  
+The average cost of a new promaster 3.6L engine is $3000.
+
+```{r cumulative cost Promaster 3.6L}
+
+promaster_line <-  data.frame(
+  xend =  c(102590, 130370, 149800, 158700,174950, 198290,211900, 102590, 130370, 149800, 158700,174950, 198290,211900),
+  x = c(102590, 130370, 149800, 158700,174950, 198290,211900, 0, 0, 0, 0, 0, 0, 0),
+  yend = c(3000, 6000, 9000, 12000, 15000, 18000, 21000, 3000, 6000, 9000, 12000, 15000, 18000, 21000),
+  y = c(0, 0, 0, 0, 0, 0, 0, 3000, 6000, 9000, 12000, 15000, 18000, 21000)
+)
+promaster_annotate <- data.frame(
+  xend = c(102590, 10000),
+  yend = c(1000, 6000),
+  x = c(0, 10000),
+  y= c(1000, 3000)
+)
+
+
+ggplot2::ggplot(data = promaster_data, ggplot2::aes(x= mileage, y = cum_cost_per_engine/8))+
+  ggplot2::geom_line()+
+  ggplot2::scale_x_continuous(breaks = seq(0, 300000,50000 )) +
+  ggplot2::theme_bw()+
+  ggplot2::geom_segment(data = promaster_line, ggplot2::aes(x= x, y= y, xend = xend, yend = yend), linetype = "dashed") + 
+  ggplot2::geom_segment(data = promaster_annotate, ggplot2::aes(x= x, y= y, xend = xend, yend = yend)) + #the arrow argument failed to work
+  ggplot2::geom_point(data = promaster_annotate, ggplot2::aes(x= xend, y = yend), shape = 20, size =2 ) +
+  ggplot2::geom_point(data = promaster_annotate, ggplot2::aes(x= x, y = y), shape = 20, size =2 )+
+  ggplot2::annotate("text", x= 35000, y = 4500, label = "Price of a new engine", size = 3, ) +
+  ggplot2::annotate("text", x = 50000, y = 1500, label = "Miles covered", size = 3) +
+  ggplot2::labs(title = "Average Cumulative Cost Vs Miles Covered for Promaster 3.6L", caption = "The average cumulative cost was calculated by dividing the overall \n cumulative cost per engine by the number of vans per engine")+
+  ggplot2::ylab("Average cumulative cost per van ($)") + 
+  ggplot2::xlab("Miles covered (Miles)")
+  
+
+ggplot2::ggsave("cumulative_cost_promaster.png", width = 1624, height = 900, units = "px")
+```
+
+
+
+
+
+### Visualizing Transit 3.7L cumulative cost data  
+
+```{r cumulative cost Transit 3.7L}
+
+transit37_line <-  data.frame(
+  xend =  c(85940, 154600, 183000, 209100,269000, 85940, 154600, 183000, 209100,269000),
+  x = c(85940,154600, 183000, 209100, 269000, 0, 0, 0, 0, 0),
+  yend = c(2500, 5000, 7500, 10000, 12500, 2500, 5000, 7500, 10000, 12500),
+  y = c(0, 0, 0, 0, 0, 2500, 5000, 7500, 10000, 12500)
+)
+transit37_annotate <- data.frame(
+  xend = c(25000, 85940), 
+  yend = c(5000, 1250),
+  x = c(25000, 154600),
+  y= c(2500, 1250)
+)
+
+
+ggplot2::ggplot(data = transit37_data, ggplot2::aes(x= mileage, y = cum_cost_per_engine/5))+
+  ggplot2::geom_line()+
+  ggplot2::scale_x_continuous(breaks = seq(0, 300000,50000 )) +
+  ggplot2::theme_bw()+
+  ggplot2::geom_segment(data = transit37_line, ggplot2::aes(x= x, y= y, xend = xend, yend = yend), linetype = "dashed") + 
+  ggplot2::geom_segment(data = transit37_annotate, ggplot2::aes(x= x, y= y, xend = xend, yend = yend)) + #the arrow argument failed to work
+  ggplot2::geom_point(data = transit37_annotate, ggplot2::aes(x= xend, y = yend), shape = 20, size =2 ) + 
+  ggplot2::geom_point(data = transit37_annotate, ggplot2::aes(x= x, y = y), shape = 20, size =2 )+
+  ggplot2::annotate("text", x= 55000, y = 3500, label = "Price of a new engine", size = 3, ) + 
+  ggplot2::annotate("text", x = 125000, y = 1500, label = "Miles covered", size = 3) + 
+  ggplot2::labs(title = "Average Cumulative Cost Vs Miles Covered for Transit 3.7L", caption = "The average cumulative cost was calculated by dividing the overall \n cumulative cost per engine by the number of vans per engine")+
+  ggplot2::ylab("Average cumulative cost per van") + 
+  ggplot2::xlab("Miles covered")
+
+
+  
+ggplot2::ggsave("cumulative_cost_transit_37l.png", width = 1624, height = 900, units = "px")
+
+```
+
